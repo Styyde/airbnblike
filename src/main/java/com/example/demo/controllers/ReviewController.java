@@ -1,14 +1,16 @@
 package com.example.demo.controllers;
 
-import com.example.demo.dto.ReviewDTO;
+import com.example.demo.annotations.CurrentUser;
 import com.example.demo.dto.ReviewRequestDTO;
 import com.example.demo.entities.Review;
+import com.example.demo.security.CustomUserDetails;
 import com.example.demo.services.ReviewService;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
-
-import java.util.List;
 
 @RestController
 @RequestMapping("/api/reviews")
@@ -18,74 +20,43 @@ public class ReviewController {
 
     private final ReviewService reviewService;
 
-    /**
-     * Ajouter un avis
-     */
     @PostMapping
-    public ResponseEntity<Review> addReview(@RequestBody ReviewRequestDTO request) {
+    @PreAuthorize("isAuthenticated()")
+    public ResponseEntity<Review> addReview(
+            @Valid @RequestBody ReviewRequestDTO request,
+            @CurrentUser CustomUserDetails currentUser) {
+
+        // Vérifier que l'utilisateur laisse son propre avis
+        if (!request.getAuthorId().equals(currentUser.getId())) {
+            throw new RuntimeException("Cannot create review for another user");
+        }
+
         Review review = reviewService.addReview(
                 request.getBookingId(),
                 request.getRating(),
                 request.getComment(),
                 request.getAuthorId()
         );
-        return ResponseEntity.ok(review);
+        return ResponseEntity.status(HttpStatus.CREATED).body(review);
     }
 
-    /**
-     * Récupérer tous les avis d'une propriété
-     */
-    @GetMapping("/property/{propertyId}")
-    public ResponseEntity<List<ReviewDTO>> getReviewsByProperty(@PathVariable String propertyId) {
-        return ResponseEntity.ok(reviewService.getReviewsByProperty(propertyId));
-    }
-
-    /**
-     * Récupérer la note moyenne d'une propriété
-     */
-    @GetMapping("/property/{propertyId}/average-rating")
-    public ResponseEntity<Double> getAverageRating(@PathVariable String propertyId) {
-        double averageRating = reviewService.getAverageRating(propertyId);
-        return ResponseEntity.ok(averageRating);
-    }
-
-    /**
-     * Récupérer tous les avis d'un utilisateur
-     */
-    @GetMapping("/user/{userId}")
-    public ResponseEntity<List<ReviewDTO>> getReviewsByUser(@PathVariable String userId) {
-        return ResponseEntity.ok(reviewService.getReviewsByAuthor(userId));
-    }
-
-    /**
-     * Récupérer un avis par son ID
-     */
-    @GetMapping("/{reviewId}")
-    public ResponseEntity<ReviewDTO> getReviewById(@PathVariable String reviewId) {
-        Review review = reviewService.getReviewById(reviewId);
-        ReviewDTO dto = reviewService.toDTO(review);
-        return ResponseEntity.ok(dto);
-    }
-
-    /**
-     * Supprimer un avis (par l'auteur)
-     */
     @DeleteMapping("/{reviewId}")
+    @PreAuthorize("isAuthenticated()")
     public ResponseEntity<Void> deleteReview(
             @PathVariable String reviewId,
-            @RequestParam String userId) {
-        reviewService.deleteReviewByAuthor(reviewId, userId);
+            @CurrentUser CustomUserDetails currentUser) {
+
+        reviewService.deleteReviewByAuthor(reviewId, currentUser.getId());
         return ResponseEntity.noContent().build();
     }
 
-    /**
-     * Vérifier si un utilisateur peut laisser un avis
-     */
     @GetMapping("/can-review")
+    @PreAuthorize("isAuthenticated()")
     public ResponseEntity<Boolean> canUserReview(
             @RequestParam String bookingId,
-            @RequestParam String userId) {
-        boolean canReview = reviewService.canUserReview(bookingId, userId);
+            @CurrentUser CustomUserDetails currentUser) {
+
+        boolean canReview = reviewService.canUserReview(bookingId, currentUser.getId());
         return ResponseEntity.ok(canReview);
     }
 }

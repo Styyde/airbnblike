@@ -1,13 +1,15 @@
 package com.example.demo.repositories;
 
+import java.time.LocalDateTime;
+import java.util.List;
 import com.example.demo.Enums.BookingStatus;
 import com.example.demo.entities.Booking;
+import org.springframework.data.mongodb.repository.Aggregation;
 import org.springframework.data.mongodb.repository.MongoRepository;
 import org.springframework.data.mongodb.repository.Query;
 import org.springframework.stereotype.Repository;
 
 import java.time.LocalDate;
-import java.util.List;
 import java.util.Optional;
 
 @Repository
@@ -21,6 +23,9 @@ public interface BookingRepository extends MongoRepository<Booking, String> {
 
     // Trouver par statut
     List<Booking> findByStatus(BookingStatus status);
+
+    // Trouver les réservations par statut et les compter
+    long countByStatus(BookingStatus status);
 
     // Trouver les réservations actives (confirmées et non terminées)
     @Query("{ 'propertyId': ?0, 'status': 'CONFIRMED', 'endDate': { $gte: ?1 } }")
@@ -55,4 +60,29 @@ public interface BookingRepository extends MongoRepository<Booking, String> {
     @Query(value = "{ 'ownerId': ?0, 'status': 'COMPLETED' }",
             fields = "{ 'totalPrice': 1 }")
     List<Booking> findCompletedBookingsByOwner(String ownerId);
+
+    // ===== NOUVELLES MÉTHODES POUR L'ADMIN =====
+
+    /**
+     * Trouver les réservations par statuts et période de création
+     */
+    @Query("{ 'status': { $in: ?0 }, 'createdAt': { $gte: ?1, $lte: ?2 } }")
+    List<Booking> findByStatusInAndCreatedAtBetween(List<BookingStatus> statuses,
+                                                    LocalDateTime startDate,
+                                                    LocalDateTime endDate);
+
+    /**
+     * Calculer la somme totale des prix pour des statuts spécifiques (pour le revenu)
+     */
+    @Aggregation(pipeline = {
+            "{ $match: { 'status': { $in: ?0 } } }",
+            "{ $group: { _id: null, total: { $sum: '$totalPrice' } } }"
+    })
+    Double sumTotalPriceByStatuses(List<BookingStatus> statuses);
+
+    /**
+     * Trouver les réservations par année (alternative sans $expr)
+     */
+    @Query("{ 'createdAt': { $gte: ?0, $lte: ?1 } }")
+    List<Booking> findByCreatedAtBetween(LocalDateTime startDate, LocalDateTime endDate);
 }

@@ -212,4 +212,19 @@ public class PropertyService {
         dto.setAmenities(amenityNames);
         return dto;
     }
+    // Ajoutez ces méthodes dans PropertyService.java
+
+    /**
+     * Compter le nombre total de propriétés (tous statuts confondus)
+     */
+    public long countAllProperties() {
+        return propertyRepository.count();
+    }
+
+    /**
+     * Compter le nombre de propriétés par statut
+     */
+    public long countPropertiesByStatus(PropertyStatus status) {
+        return propertyRepository.countByStatus(status);
+    }
 }

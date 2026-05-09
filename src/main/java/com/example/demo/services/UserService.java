@@ -8,6 +8,7 @@ import com.example.demo.repositories.PropertyRepository;  // ← Ajoute cet impo
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 import java.util.Set;
@@ -84,5 +85,51 @@ public class UserService {
         return userRepository.findAll().stream()
                 .filter(user -> !propertyRepository.findByOwnerId(user.getId()).isEmpty())
                 .collect(Collectors.toList());
+    }
+    // Ajoutez ces méthodes dans UserService.java
+
+    /**
+     * Récupérer tous les utilisateurs
+     */
+    public List<User> getAllUsers() {
+        return userRepository.findAll();
+    }
+
+    /**
+     * Assigner un rôle à un utilisateur
+     */
+    @Transactional
+    public User assignRole(String userId, String role) {
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new RuntimeException("User not found with id: " + userId));
+
+        Set<String> roles = user.getRoles();
+        roles.add(role);
+        user.setRoles(roles);
+
+        return userRepository.save(user);
+    }
+
+    /**
+     * Supprimer un utilisateur (soft delete ou hard delete)
+     */
+    @Transactional
+    public void deleteUser(String userId) {
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new RuntimeException("User not found with id: " + userId));
+
+        // Option 1: Hard delete (suppression définitive)
+        userRepository.delete(user);
+
+        // Option 2: Soft delete (si vous ajoutez un champ 'active' à User)
+        // user.setActive(false);
+        // userRepository.save(user);
+    }
+
+    /**
+     * Compter le nombre total d'utilisateurs
+     */
+    public long countUsers() {
+        return userRepository.count();
     }
 }

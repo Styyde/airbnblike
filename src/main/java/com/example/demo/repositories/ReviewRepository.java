@@ -47,7 +47,7 @@ public interface ReviewRepository extends MongoRepository<Review, String> {
 
     // Compter les avis d'une propriété
     long countByPropertyId(String propertyId);
-    
+
 
     // Soft delete : trouver les avis non supprimés
     @Query("{ 'propertyId': ?0, 'isDeleted': false }")
