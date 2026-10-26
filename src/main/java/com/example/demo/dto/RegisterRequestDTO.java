@@ -24,8 +24,16 @@ public class RegisterRequestDTO {
 
     @NotBlank(message = "Password is required")
     @Size(min = 6, max = 100, message = "Password must be between 6 and 100 characters")
+    @lombok.ToString.Exclude
     private String password;
 
     @NotBlank(message = "Confirm password is required")
+    @lombok.ToString.Exclude
     private String confirmPassword;
+
+    @jakarta.validation.constraints.AssertTrue(message = "Les mots de passe doivent correspondre")
+    @com.fasterxml.jackson.annotation.JsonIgnore
+    public boolean isPasswordConfirmed() {
+        return password != null && password.equals(confirmPassword);
+    }
 }

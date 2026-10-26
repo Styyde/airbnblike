@@ -6,6 +6,7 @@ import org.springframework.data.mongodb.core.mapping.Document;
 import java.time.LocalDateTime;
 
 @Document(collection = "messages")
+@org.springframework.data.mongodb.core.index.CompoundIndex(name = "conversation_time", def = "{'conversationId':1,'timestamp':1}")
 @Data
 @NoArgsConstructor
 @AllArgsConstructor

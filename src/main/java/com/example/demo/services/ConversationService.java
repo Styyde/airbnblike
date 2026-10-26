@@ -27,6 +27,8 @@ public class ConversationService {
     private final ConversationRepository conversationRepository;
     private final MessageRepository messageRepository;
     private final UserRepository userRepository;
+    private final com.example.demo.repositories.BookingRepository bookingRepository;
+    private final com.example.demo.repositories.PropertyRepository propertyRepository;
 
     // ===== GESTION DES CONVERSATIONS =====
 
@@ -35,11 +37,21 @@ public class ConversationService {
      */
     @Transactional
     public Conversation getOrCreateConversation(String user1Id, String user2Id, String bookingId) {
+        if (user1Id.equals(user2Id)) throw com.example.demo.exceptions.ApiException.badRequest("Deux participants distincts sont requis");
+        if (bookingId != null) {
+            var booking = bookingRepository.findById(bookingId)
+                    .orElseThrow(() -> com.example.demo.exceptions.ApiException.notFound("Réservation introuvable"));
+            var property = propertyRepository.findById(booking.getPropertyId()).orElseThrow();
+            if (!(booking.getUserId().equals(user1Id) && property.getOwnerId().equals(user2Id))
+                    && !(booking.getUserId().equals(user2Id) && property.getOwnerId().equals(user1Id))) {
+                throw new org.springframework.security.access.AccessDeniedException("Participants incompatibles avec la réservation");
+            }
+        }
         // Vérifier que les utilisateurs existent
         User user1 = userRepository.findById(user1Id)
-                .orElseThrow(() -> new RuntimeException("Utilisateur 1 non trouvé"));
+                .orElseThrow(() -> com.example.demo.exceptions.ApiException.notFound("Utilisateur 1 non trouvé"));
         User user2 = userRepository.findById(user2Id)
-                .orElseThrow(() -> new RuntimeException("Utilisateur 2 non trouvé"));
+                .orElseThrow(() -> com.example.demo.exceptions.ApiException.notFound("Utilisateur 2 non trouvé"));
 
         // Trier les IDs pour avoir des conversations uniques
         String id1 = user1Id.compareTo(user2Id) < 0 ? user1Id : user2Id;
@@ -70,12 +82,13 @@ public class ConversationService {
     public List<ConversationDTO> getUserConversations(String userId) {
         // Vérifier que l'utilisateur existe
         userRepository.findById(userId)
-                .orElseThrow(() -> new RuntimeException("Utilisateur non trouvé"));
+                .orElseThrow(() -> com.example.demo.exceptions.ApiException.notFound("Utilisateur non trouvé"));
 
         List<Conversation> conversations = conversationRepository
-                .findActiveConversationsByUserId(userId);
+                .findAllConversationsByUserId(userId);
 
         return conversations.stream()
+                .filter(conv -> !Boolean.TRUE.equals(userId.equals(conv.getUser1Id()) ? conv.getArchivedForUser1() : conv.getArchivedForUser2()))
                 .map(conv -> convertToDTO(conv, userId))
                 .sorted(Comparator.comparing(ConversationDTO::getLastMessageAt,
                         Comparator.nullsLast(Comparator.reverseOrder())))
@@ -87,11 +100,11 @@ public class ConversationService {
      */
     public Conversation getConversationById(String conversationId, String userId) {
         Conversation conversation = conversationRepository.findById(conversationId)
-                .orElseThrow(() -> new RuntimeException("Conversation non trouvée"));
+                .orElseThrow(() -> com.example.demo.exceptions.ApiException.notFound("Conversation non trouvée"));
 
         // Vérifier que l'utilisateur fait partie de la conversation
         if (!conversation.getUser1Id().equals(userId) && !conversation.getUser2Id().equals(userId)) {
-            throw new RuntimeException("Accès non autorisé à cette conversation");
+            throw new org.springframework.security.access.AccessDeniedException("Accès non autorisé à cette conversation");
         }
 
         return conversation;
@@ -106,24 +119,24 @@ public class ConversationService {
     public Message sendMessage(String conversationId, String senderId, String receiverId, String content) {
         // 1. Valider le contenu
         if (content == null || content.trim().isEmpty()) {
-            throw new RuntimeException("Le message ne peut pas être vide");
+            throw com.example.demo.exceptions.ApiException.badRequest("Le message ne peut pas être vide");
         }
         if (content.length() > 5000) {
-            throw new RuntimeException("Le message est trop long (maximum 5000 caractères)");
+            throw com.example.demo.exceptions.ApiException.badRequest("Le message est trop long (maximum 5000 caractères)");
         }
 
         // 2. Récupérer et valider la conversation
         Conversation conversation = conversationRepository.findById(conversationId)
-                .orElseThrow(() -> new RuntimeException("Conversation non trouvée"));
+                .orElseThrow(() -> com.example.demo.exceptions.ApiException.notFound("Conversation non trouvée"));
 
         // 3. VALIDATION CRITIQUE : vérifier que l'expéditeur et le destinataire correspondent à la conversation
         validateConversationParticipants(conversation, senderId, receiverId);
 
         // 4. Vérifier que les utilisateurs existent
         User sender = userRepository.findById(senderId)
-                .orElseThrow(() -> new RuntimeException("Expéditeur non trouvé"));
+                .orElseThrow(() -> com.example.demo.exceptions.ApiException.notFound("Expéditeur non trouvé"));
         User receiver = userRepository.findById(receiverId)
-                .orElseThrow(() -> new RuntimeException("Destinataire non trouvé"));
+                .orElseThrow(() -> com.example.demo.exceptions.ApiException.notFound("Destinataire non trouvé"));
 
         // 5. Créer le message
         Message message = Message.builder()
@@ -158,7 +171,7 @@ public class ConversationService {
         // Vérifier que l'expéditeur est l'un des participants
         boolean isSenderValid = senderId.equals(user1Id) || senderId.equals(user2Id);
         if (!isSenderValid) {
-            throw new RuntimeException("L'expéditeur ne fait pas partie de cette conversation");
+            throw new org.springframework.security.access.AccessDeniedException("L'expéditeur ne fait pas partie de cette conversation");
         }
 
         // Vérifier que le destinataire est l'autre participant
@@ -166,7 +179,7 @@ public class ConversationService {
                 (senderId.equals(user2Id) && receiverId.equals(user1Id));
 
         if (!isReceiverValid) {
-            throw new RuntimeException("Le destinataire ne correspond pas à l'autre participant de la conversation");
+            throw new org.springframework.security.access.AccessDeniedException("Le destinataire ne correspond pas à l'autre participant de la conversation");
         }
     }
 
@@ -187,9 +200,9 @@ public class ConversationService {
         }
 
         // Désarchiver si besoin
-        if (conversation.getIsArchived()) {
-            conversation.setIsArchived(false);
-        }
+        conversation.setIsArchived(false);
+        conversation.setArchivedForUser1(false);
+        conversation.setArchivedForUser2(false);
 
         conversationRepository.save(conversation);
     }
@@ -246,7 +259,8 @@ public class ConversationService {
      * Compter les messages non lus pour un utilisateur
      */
     public int countUnreadMessages(String userId) {
-        return conversationRepository.getTotalUnreadCount(userId);
+        return (int) messageRepository.findByReceiverIdAndIsReadFalse(userId).stream()
+                .filter(m -> !Boolean.TRUE.equals(m.getIsDeletedForReceiver())).count();
     }
 
     // ===== SUPPRESSION DE MESSAGES =====
@@ -257,11 +271,11 @@ public class ConversationService {
     @Transactional
     public void deleteMessageForUser(String messageId, String userId) {
         Message message = messageRepository.findById(messageId)
-                .orElseThrow(() -> new RuntimeException("Message non trouvé"));
+                .orElseThrow(() -> com.example.demo.exceptions.ApiException.notFound("Message non trouvé"));
 
         // Vérifier que l'utilisateur est l'expéditeur ou le destinataire
         if (!message.getSenderId().equals(userId) && !message.getReceiverId().equals(userId)) {
-            throw new RuntimeException("Vous n'êtes pas autorisé à supprimer ce message");
+            throw new org.springframework.security.access.AccessDeniedException("Vous n'êtes pas autorisé à supprimer ce message");
         }
 
         // Soft delete : marquer comme supprimé pour cet utilisateur
@@ -282,18 +296,18 @@ public class ConversationService {
     @Transactional
     public void deleteMessageForEveryone(String messageId, String userId) {
         Message message = messageRepository.findById(messageId)
-                .orElseThrow(() -> new RuntimeException("Message non trouvé"));
+                .orElseThrow(() -> com.example.demo.exceptions.ApiException.notFound("Message non trouvé"));
 
         User user = userRepository.findById(userId)
-                .orElseThrow(() -> new RuntimeException("Utilisateur non trouvé"));
+                .orElseThrow(() -> com.example.demo.exceptions.ApiException.notFound("Utilisateur non trouvé"));
 
         // Seul l'expéditeur ou un admin peut supprimer pour tout le monde
         boolean isAdmin = user.getRoles().contains("ROLE_ADMIN");
         if (!message.getSenderId().equals(userId) && !isAdmin) {
-            throw new RuntimeException("Seul l'expéditeur ou un administrateur peut supprimer ce message");
+            throw new org.springframework.security.access.AccessDeniedException("Seul l'expéditeur ou un administrateur peut supprimer ce message");
         }
 
-        // Hard delete
+        // Suppression définitive des messages autorisée ici pour leur expéditeur ou un admin.
         messageRepository.delete(message);
         log.info("Message {} supprimé définitivement par {}", messageId, userId);
 
@@ -346,12 +360,8 @@ public class ConversationService {
         // Réinitialiser les compteurs pour cet utilisateur
         if (userId.equals(conversation.getUser1Id())) {
             conversation.setUnreadCountForUser1(0);
-            conversation.setLastMessage(null);
-            conversation.setLastMessageAt(null);
         } else {
             conversation.setUnreadCountForUser2(0);
-            conversation.setLastMessage(null);
-            conversation.setLastMessageAt(null);
         }
 
         conversationRepository.save(conversation);
@@ -366,7 +376,8 @@ public class ConversationService {
     @Transactional
     public void archiveConversation(String conversationId, String userId) {
         Conversation conversation = getConversationById(conversationId, userId);
-        conversation.setIsArchived(true);
+        if (userId.equals(conversation.getUser1Id())) conversation.setArchivedForUser1(true);
+        else conversation.setArchivedForUser2(true);
         conversationRepository.save(conversation);
         log.info("Conversation {} archivée par {}", conversationId, userId);
     }
@@ -377,7 +388,8 @@ public class ConversationService {
     @Transactional
     public void unarchiveConversation(String conversationId, String userId) {
         Conversation conversation = getConversationById(conversationId, userId);
-        conversation.setIsArchived(false);
+        if (userId.equals(conversation.getUser1Id())) conversation.setArchivedForUser1(false);
+        else conversation.setArchivedForUser2(false);
         conversationRepository.save(conversation);
         log.info("Conversation {} désarchivée par {}", conversationId, userId);
     }
@@ -401,23 +413,25 @@ public class ConversationService {
      * Convertir une Conversation en DTO
      */
     private ConversationDTO convertToDTO(Conversation conversation, String currentUserId) {
+        List<Message> visible = messageRepository.findByConversationId(conversation.getId()).stream()
+                .filter(m -> !isMessageDeletedForUser(m, currentUserId)).toList();
+        Message latest = visible.stream().max(Comparator.comparing(Message::getTimestamp)).orElse(null);
         String otherUserId = conversation.getUser1Id().equals(currentUserId) ?
                 conversation.getUser2Id() : conversation.getUser1Id();
 
         User otherUser = userRepository.findById(otherUserId).orElse(null);
 
-        int unreadCount = conversation.getUser1Id().equals(currentUserId) ?
-                conversation.getUnreadCountForUser1() : conversation.getUnreadCountForUser2();
+        int unreadCount = (int) visible.stream().filter(m -> currentUserId.equals(m.getReceiverId()) && !Boolean.TRUE.equals(m.getIsRead())).count();
 
         return ConversationDTO.builder()
                 .conversationId(conversation.getId())
                 .otherUserId(otherUserId)
                 .otherUserName(otherUser != null ? otherUser.getUsername() : "Utilisateur inconnu")
                 .otherUserAvatar(null) // À ajouter si tu as un champ avatar
-                .lastMessage(conversation.getLastMessage())
-                .lastMessageAt(conversation.getLastMessageAt())
+                .lastMessage(latest == null ? null : latest.getContent().substring(0, Math.min(100, latest.getContent().length())))
+                .lastMessageAt(latest == null ? null : latest.getTimestamp())
                 .unreadCount(unreadCount)
-                .isArchived(conversation.getIsArchived())
+                .isArchived(currentUserId.equals(conversation.getUser1Id()) ? conversation.getArchivedForUser1() : conversation.getArchivedForUser2())
                 .bookingId(conversation.getBookingId())
                 .build();
     }
@@ -435,10 +449,10 @@ public class ConversationService {
     @Transactional
     public void deleteConversationPermanently(String conversationId, String adminId) {
         User admin = userRepository.findById(adminId)
-                .orElseThrow(() -> new RuntimeException("Admin non trouvé"));
+                .orElseThrow(() -> com.example.demo.exceptions.ApiException.notFound("Admin non trouvé"));
 
         if (!admin.getRoles().contains("ROLE_ADMIN")) {
-            throw new RuntimeException("Seul un administrateur peut supprimer définitivement une conversation");
+            throw new org.springframework.security.access.AccessDeniedException("Seul un administrateur peut supprimer définitivement une conversation");
         }
 
         // Supprimer tous les messages

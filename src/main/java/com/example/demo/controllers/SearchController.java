@@ -13,7 +13,6 @@ import java.util.List;
 @RestController
 @RequestMapping("/api/search")
 @RequiredArgsConstructor
-@CrossOrigin(origins = "http://localhost:4200")
 public class SearchController {
 
     private final SearchService searchService;
@@ -24,8 +23,8 @@ public class SearchController {
             @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate startDate,
             @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate endDate,
             @RequestParam Integer guests,
-            @RequestParam(required = false) Double minPrice,
-            @RequestParam(required = false) Double maxPrice) {
+            @RequestParam(required = false) java.math.BigDecimal minPrice,
+            @RequestParam(required = false) java.math.BigDecimal maxPrice) {
 
         return ResponseEntity.ok(searchService.searchProperties(
                 city, startDate, endDate, guests, minPrice, maxPrice

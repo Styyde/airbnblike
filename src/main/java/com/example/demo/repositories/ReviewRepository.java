@@ -50,6 +50,6 @@ public interface ReviewRepository extends MongoRepository<Review, String> {
 
 
     // Soft delete : trouver les avis non supprimés
-    @Query("{ 'propertyId': ?0, 'isDeleted': false }")
+    @Query("{ 'propertyId': ?0 }")
     List<Review> findActiveReviewsByProperty(String propertyId);
 }

@@ -8,10 +8,10 @@ public class PropertyDTO {
     private String id;
     private String title;
     private String description;
-    private String type;
+    private com.example.demo.Enums.PropertyType type;
     private String city;
     private String country;
-    private Double pricePerNight;
+    private java.math.BigDecimal pricePerNight;
     private Integer maxGuests;
 
     // Au lieu d'une entité Photo, on utilise une liste de liens directs

@@ -15,7 +15,6 @@ import org.springframework.web.bind.annotation.*;
 @RestController
 @RequestMapping("/api/reviews")
 @RequiredArgsConstructor
-@CrossOrigin(origins = "http://localhost:4200")
 public class ReviewController {
 
     private final ReviewService reviewService;
@@ -26,16 +25,11 @@ public class ReviewController {
             @Valid @RequestBody ReviewRequestDTO request,
             @CurrentUser CustomUserDetails currentUser) {
 
-        // Vérifier que l'utilisateur laisse son propre avis
-        if (!request.getAuthorId().equals(currentUser.getId())) {
-            throw new RuntimeException("Cannot create review for another user");
-        }
-
         Review review = reviewService.addReview(
                 request.getBookingId(),
                 request.getRating(),
                 request.getComment(),
-                request.getAuthorId()
+                currentUser.getId()
         );
         return ResponseEntity.status(HttpStatus.CREATED).body(review);
     }
@@ -58,5 +52,10 @@ public class ReviewController {
 
         boolean canReview = reviewService.canUserReview(bookingId, currentUser.getId());
         return ResponseEntity.ok(canReview);
+    }
+
+    @GetMapping("/property/{propertyId}")
+    public java.util.List<com.example.demo.dto.ReviewDTO> byProperty(@PathVariable String propertyId) {
+        return reviewService.getReviewsByProperty(propertyId);
     }
 }

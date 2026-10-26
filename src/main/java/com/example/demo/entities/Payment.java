@@ -16,10 +16,15 @@ import java.time.LocalDateTime;
 public class Payment {
     @Id
     private String id;
-    private Double amount;
+    @org.springframework.data.mongodb.core.mapping.Field(targetType = org.springframework.data.mongodb.core.mapping.FieldType.DECIMAL128)
+    private java.math.BigDecimal amount;
     private PaymentMethod method;  // ← Changé de String à PaymentMethod
     private PaymentStatus status;   // ← Changé de String à PaymentStatus
+    @org.springframework.data.mongodb.core.index.Indexed(unique = true)
     private String bookingId;
+    private String gatewayTransactionId;
+    @org.springframework.data.annotation.Version
+    private Long version;
 
     @Builder.Default
     private LocalDateTime paymentDate = LocalDateTime.now();

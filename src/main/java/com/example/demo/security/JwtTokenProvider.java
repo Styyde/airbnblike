@@ -21,8 +21,17 @@ public class JwtTokenProvider {
     private int jwtExpirationMs;
 
     private Key key() {
-        return Keys.hmacShaKeyFor(jwtSecret.getBytes());
+        return Keys.hmacShaKeyFor(jwtSecret.getBytes(java.nio.charset.StandardCharsets.UTF_8));
     }
+
+    @jakarta.annotation.PostConstruct
+    void validateConfiguration() {
+        if (jwtSecret.getBytes(java.nio.charset.StandardCharsets.UTF_8).length < 64 || jwtExpirationMs <= 0) {
+            throw new IllegalStateException("JWT_SECRET doit contenir au moins 64 octets et JWT_EXPIRATION_MS être positif");
+        }
+    }
+
+    public long getExpirationMs() { return jwtExpirationMs; }
 
     public String generateToken(Authentication authentication) {
         CustomUserDetails userPrincipal = (CustomUserDetails) authentication.getPrincipal();
@@ -57,6 +66,8 @@ public class JwtTokenProvider {
         try {
             Jwts.parserBuilder().setSigningKey(key()).build().parseClaimsJws(authToken);
             return true;
+        } catch (io.jsonwebtoken.security.SecurityException ex) {
+            log.debug("Invalid JWT signature");
         } catch (MalformedJwtException ex) {
             log.error("Invalid JWT token");
         } catch (ExpiredJwtException ex) {

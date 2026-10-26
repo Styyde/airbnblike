@@ -16,7 +16,8 @@ public class Review {
 
     private String authorId;    // ID de l'User qui laisse l'avis (le voyageur)
     private String propertyId;  // ID de la Property concernée
-    private String bookingId;   // ID de la Booking associée (pour prouver la légitimité de l'avis)
+    @org.springframework.data.mongodb.core.index.Indexed(unique = true)
+    private String bookingId;
 
     private Integer rating;     // Note globale (ex: de 1 à 5)
     private String comment;     // Le texte du commentaire

@@ -23,14 +23,14 @@ public interface PropertyRepository extends MongoRepository<Property, String> {
 
     // Recherche par fourchette de prix
     @Query("{ 'pricePerNight': { $gte: ?0, $lte: ?1 } }")
-    List<Property> findByPricePerNightBetween(Double minPrice, Double maxPrice);
+    List<Property> findByPricePerNightBetween(java.math.BigDecimal minPrice, java.math.BigDecimal maxPrice);
 
     // Recherche avancée
     @Query("{ 'city': { $regex: ?0, $options: 'i' }, " +
             "'maxGuests': { $gte: ?1 }, " +
             "'pricePerNight': { $lte: ?2 }, " +
             "'status': 'AVAILABLE' }")
-    List<Property> advancedSearch(String city, Integer guests, Double maxPrice);
+    List<Property> advancedSearch(String city, Integer guests, java.math.BigDecimal maxPrice);
 
     // Recherche par nombre de guests minimum
     List<Property> findByMaxGuestsGreaterThanEqual(Integer maxGuests);

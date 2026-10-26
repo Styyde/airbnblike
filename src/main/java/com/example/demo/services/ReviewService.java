@@ -24,19 +24,22 @@ public class ReviewService {
 
     // Ajouter un avis (seulement après un séjour complété)
     public Review addReview(String bookingId, Integer rating, String comment, String authorId) {
+        if (rating == null || rating < 1 || rating > 5 || comment == null || comment.isBlank()) {
+            throw com.example.demo.exceptions.ApiException.badRequest("Avis invalide");
+        }
         Booking booking = bookingRepository.findById(bookingId)
-                .orElseThrow(() -> new RuntimeException("Booking not found"));
+                .orElseThrow(() -> com.example.demo.exceptions.ApiException.notFound("Booking not found"));
 
-        if (booking.getStatus() != BookingStatus.COMPLETED) {
-            throw new RuntimeException("Can only review completed stays");
+        if (booking.getStatus() != BookingStatus.COMPLETED || booking.getEndDate().isAfter(java.time.LocalDate.now())) {
+            throw com.example.demo.exceptions.ApiException.conflict("Can only review completed stays");
         }
 
         if (!booking.getUserId().equals(authorId)) {
-            throw new RuntimeException("Only the guest can leave a review");
+            throw new org.springframework.security.access.AccessDeniedException("Only the guest can leave a review");
         }
 
         if (reviewRepository.existsByBookingId(bookingId)) {
-            throw new RuntimeException("Review already exists for this booking");
+            throw com.example.demo.exceptions.ApiException.conflict("Review already exists for this booking");
         }
 
         Review review = Review.builder()
@@ -68,7 +71,7 @@ public class ReviewService {
     // Récupérer un avis par son ID
     public Review getReviewById(String reviewId) {
         return reviewRepository.findById(reviewId)
-                .orElseThrow(() -> new RuntimeException("Review not found with id: " + reviewId));
+                .orElseThrow(() -> com.example.demo.exceptions.ApiException.notFound("Review not found with id: " + reviewId));
     }
 
     // Calculer la note moyenne d'une propriété
@@ -88,7 +91,7 @@ public class ReviewService {
         Review review = getReviewById(reviewId);
 
         if (!review.getAuthorId().equals(userId)) {
-            throw new RuntimeException("You can only delete your own reviews");
+            throw new org.springframework.security.access.AccessDeniedException("You can only delete your own reviews");
         }
 
         reviewRepository.delete(review);
@@ -98,6 +101,7 @@ public class ReviewService {
     public boolean canUserReview(String bookingId, String userId) {
         return bookingRepository.findById(bookingId)
                 .map(booking -> booking.getStatus() == BookingStatus.COMPLETED
+                        && !booking.getEndDate().isAfter(java.time.LocalDate.now())
                         && booking.getUserId().equals(userId)
                         && !reviewRepository.existsByBookingId(bookingId))
                 .orElse(false);

@@ -14,6 +14,7 @@ import java.util.Optional;
 
 @Repository
 public interface BookingRepository extends MongoRepository<Booking, String> {
+    List<Booking> findByStatusAndExpiresAtBefore(BookingStatus status, LocalDateTime now);
 
     // Trouver les réservations d'un utilisateur
     List<Booking> findByUserId(String userId);
@@ -46,7 +47,7 @@ public interface BookingRepository extends MongoRepository<Booking, String> {
 
     // Trouver les réservations à confirmer (PENDING)
     @Query("{ 'status': 'PENDING', 'createdAt': { $lte: ?0 } }")
-    List<Booking> findPendingBookingsOlderThan(LocalDate date);
+    List<Booking> findPendingBookingsOlderThan(LocalDateTime date);
 
     // Compter les réservations par propriété
     @Query(value = "{ 'propertyId': ?0, 'status': 'CONFIRMED' }", count = true)
@@ -57,9 +58,9 @@ public interface BookingRepository extends MongoRepository<Booking, String> {
     List<Booking> findBookingsInPeriod(LocalDate startDate, LocalDate endDate);
 
     // Calculer le chiffre d'affaires total pour un propriétaire
-    @Query(value = "{ 'ownerId': ?0, 'status': 'COMPLETED' }",
+    @Query(value = "{ 'propertyId': { $in: ?0 }, 'status': 'COMPLETED' }",
             fields = "{ 'totalPrice': 1 }")
-    List<Booking> findCompletedBookingsByOwner(String ownerId);
+    List<Booking> findCompletedBookingsByPropertyIdIn(List<String> propertyIds);
 
     // ===== NOUVELLES MÉTHODES POUR L'ADMIN =====
 
@@ -78,7 +79,11 @@ public interface BookingRepository extends MongoRepository<Booking, String> {
             "{ $match: { 'status': { $in: ?0 } } }",
             "{ $group: { _id: null, total: { $sum: '$totalPrice' } } }"
     })
-    Double sumTotalPriceByStatuses(List<BookingStatus> statuses);
+    List<RevenueTotal> sumTotalPriceByStatuses(List<BookingStatus> statuses);
+
+    record RevenueTotal(@org.springframework.data.mongodb.core.mapping.Field(
+            targetType = org.springframework.data.mongodb.core.mapping.FieldType.DECIMAL128)
+            java.math.BigDecimal total) {}
 
     /**
      * Trouver les réservations par année (alternative sans $expr)

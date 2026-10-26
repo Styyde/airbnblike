@@ -12,6 +12,7 @@ public class LoginResponseDTO {
     private String username;
     private String email;
     private Set<String> roles;
+    @lombok.ToString.Exclude
     private String token;
     private String tokenType;
     private Long expiresIn;

@@ -12,6 +12,12 @@ import java.time.LocalDateTime;
 import java.time.YearMonth;
 import java.util.*;
 import java.util.stream.Collectors;
+import java.math.BigDecimal;
+import com.example.demo.exceptions.ApiException;
+import com.example.demo.security.ResourceAccess;
+import com.example.demo.repositories.PaymentRepository;
+import com.example.demo.Enums.PaymentStatus;
+import org.springframework.transaction.annotation.Transactional;
 
 @Service
 @RequiredArgsConstructor
@@ -19,17 +25,29 @@ public class BookingService {
 
     private final BookingRepository bookingRepository;
     private final PropertyService propertyService; // Pour vérifier la disponibilité
+    private final PropertyCalendar calendar;
+    private final ResourceAccess access;
+    private final PaymentRepository paymentRepository;
 
     // ===== MÉTHODES EXISTANTES =====
 
+    @Transactional
     public Booking createBooking(BookingRequestDTO dto) {
+        StayDates.validate(dto.getStartDate(), dto.getEndDate());
+        calendar.lock(dto.getPropertyId());
+        var property = propertyService.getPropertyById(dto.getPropertyId());
+        String guestId = access.current().getId();
+        if (property.getOwnerId().equals(guestId)) throw ApiException.badRequest("Vous ne pouvez pas réserver votre propre logement");
+        if (dto.getNumberOfGuests() == null || dto.getNumberOfGuests() < 1 || dto.getNumberOfGuests() > property.getMaxGuests()) {
+            throw ApiException.badRequest("Nombre de voyageurs incompatible avec la capacité du logement");
+        }
         // 1. Vérifier disponibilité (Cas d'utilisation "Vérifier disponibilité")
         if (!propertyService.isAvailable(dto.getPropertyId(), dto.getStartDate(), dto.getEndDate())) {
-            throw new RuntimeException("Logement non disponible pour ces dates");
+            throw ApiException.conflict("Logement non disponible pour ces dates");
         }
 
         // 2. Calculer le prix total (Logique métier)
-        Double totalPrice = propertyService.calculateTotalPrice(dto.getPropertyId(), dto.getStartDate(), dto.getEndDate());
+        BigDecimal totalPrice = propertyService.calculateTotalPrice(dto.getPropertyId(), dto.getStartDate(), dto.getEndDate());
 
         // 3. Utilisation du Builder pour créer la réservation
         Booking booking = Booking.builder()
@@ -37,20 +55,31 @@ public class BookingService {
                 .endDate(dto.getEndDate())
                 .numberOfGuests(dto.getNumberOfGuests())
                 .propertyId(dto.getPropertyId())
-                .userId(dto.getUserId())
+                .userId(guestId)
                 .totalPrice(totalPrice)
                 .status(BookingStatus.PENDING) // Statut initial avant paiement
                 .createdAt(LocalDateTime.now())
+                .expiresAt(LocalDateTime.now().plusMinutes(30))
                 .build();
 
         return bookingRepository.save(booking);
     }
 
+    @Transactional
     public void cancelBooking(String bookingId) {
+        access.bookingGuest(bookingId);
         // Logique pour "Annuler une réservation"
         Booking booking = bookingRepository.findById(bookingId)
-                .orElseThrow(() -> new RuntimeException("Réservation introuvable"));
+                .orElseThrow(() -> com.example.demo.exceptions.ApiException.notFound("Réservation introuvable"));
+        if (booking.getStatus() == BookingStatus.CANCELLED) return;
+        if (booking.getStatus() == BookingStatus.COMPLETED || !booking.getStartDate().isAfter(LocalDate.now())) {
+            throw ApiException.conflict("Seul un séjour futur peut être annulé");
+        }
+        if (paymentRepository.findByBookingId(bookingId).filter(p -> p.getStatus() == PaymentStatus.COMPLETED).isPresent()) {
+            throw ApiException.conflict("Utilisez le remboursement pour annuler une réservation payée");
+        }
         booking.setStatus(BookingStatus.CANCELLED);
+        booking.setUpdatedAt(LocalDateTime.now());
         bookingRepository.save(booking);
     }
 
@@ -64,20 +93,31 @@ public class BookingService {
 
     public Booking getBookingById(String id) {
         return bookingRepository.findById(id)
-                .orElseThrow(() -> new RuntimeException("Réservation non trouvée"));
+                .orElseThrow(() -> com.example.demo.exceptions.ApiException.notFound("Réservation non trouvée"));
     }
 
-    public Booking confirmBooking(String bookingId) {
-        Booking booking = bookingRepository.findById(bookingId)
-                .orElseThrow(() -> new RuntimeException("Réservation introuvable"));
-
-        if (booking.getStatus() != BookingStatus.PENDING) {
-            throw new RuntimeException("Seules les réservations en attente peuvent être confirmées");
+    @Transactional
+    public Booking completeBooking(String bookingId) {
+        Booking booking = access.bookingParticipant(bookingId);
+        access.propertyOwner(booking.getPropertyId());
+        if (booking.getStatus() != BookingStatus.CONFIRMED || booking.getEndDate().isAfter(LocalDate.now())) {
+            throw ApiException.conflict("Seul un séjour confirmé et terminé peut être clôturé");
         }
-
-        booking.setStatus(BookingStatus.CONFIRMED);
+        booking.setStatus(BookingStatus.COMPLETED);
         booking.setUpdatedAt(LocalDateTime.now());
         return bookingRepository.save(booking);
+    }
+
+    @Transactional
+    public void expireBooking(String id) {
+        Booking booking = getBookingById(id);
+        calendar.lock(booking.getPropertyId());
+        if (booking.getStatus() == BookingStatus.PENDING && booking.getExpiresAt() != null
+                && !booking.getExpiresAt().isAfter(LocalDateTime.now())) {
+            booking.setStatus(BookingStatus.CANCELLED);
+            booking.setUpdatedAt(LocalDateTime.now());
+            bookingRepository.save(booking);
+        }
     }
 
     // ===== NOUVELLES MÉTHODES POUR L'ADMIN =====
@@ -100,42 +140,42 @@ public class BookingService {
      * Calculer le revenu total (somme de toutes les réservations confirmées et complétées)
      * Version utilisant l'agrégation MongoDB (plus performante)
      */
-    public Double getTotalRevenue() {
+    public BigDecimal getTotalRevenue() {
         List<BookingStatus> statuses = List.of(BookingStatus.CONFIRMED, BookingStatus.COMPLETED);
-        Double total = bookingRepository.sumTotalPriceByStatuses(statuses);
-        return total != null ? total : 0.0;
+        return bookingRepository.sumTotalPriceByStatuses(statuses).stream()
+                .map(BookingRepository.RevenueTotal::total).reduce(BigDecimal.ZERO, BigDecimal::add);
     }
 
     /**
      * Calculer le revenu total (version alternative sans agrégation)
      * À utiliser si sumTotalPriceByStatuses pose problème
      */
-    public Double getTotalRevenueAlternative() {
+    public BigDecimal getTotalRevenueAlternative() {
         List<Booking> allBookings = bookingRepository.findAll();
 
         return allBookings.stream()
                 .filter(booking -> booking.getStatus() == BookingStatus.CONFIRMED ||
                         booking.getStatus() == BookingStatus.COMPLETED)
-                .mapToDouble(Booking::getTotalPrice)
-                .sum();
+                .map(Booking::getTotalPrice)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
     }
 
     /**
      * Calculer le revenu pour une période spécifique
      */
-    public Double getRevenueBetweenDates(LocalDateTime startDate, LocalDateTime endDate) {
+    public BigDecimal getRevenueBetweenDates(LocalDateTime startDate, LocalDateTime endDate) {
         List<BookingStatus> statuses = List.of(BookingStatus.CONFIRMED, BookingStatus.COMPLETED);
         List<Booking> bookings = bookingRepository.findByStatusInAndCreatedAtBetween(statuses, startDate, endDate);
 
         return bookings.stream()
-                .mapToDouble(Booking::getTotalPrice)
-                .sum();
+                .map(Booking::getTotalPrice)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
     }
 
     /**
      * Calculer le revenu pour une période spécifique (version alternative)
      */
-    public Double getRevenueBetweenDatesAlternative(LocalDateTime startDate, LocalDateTime endDate) {
+    public BigDecimal getRevenueBetweenDatesAlternative(LocalDateTime startDate, LocalDateTime endDate) {
         List<Booking> allBookings = bookingRepository.findAll();
 
         return allBookings.stream()
@@ -144,8 +184,8 @@ public class BookingService {
                 .filter(booking -> booking.getCreatedAt() != null &&
                         !booking.getCreatedAt().isBefore(startDate) &&
                         !booking.getCreatedAt().isAfter(endDate))
-                .mapToDouble(Booking::getTotalPrice)
-                .sum();
+                .map(Booking::getTotalPrice)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
     }
 
     /**
@@ -225,8 +265,8 @@ public class BookingService {
         stats.put("total", bookingRepository.count());
 
         // Revenu par statut
-        double revenueFromConfirmed = getRevenueByStatus(BookingStatus.CONFIRMED);
-        double revenueFromCompleted = getRevenueByStatus(BookingStatus.COMPLETED);
+        BigDecimal revenueFromConfirmed = getRevenueByStatus(BookingStatus.CONFIRMED);
+        BigDecimal revenueFromCompleted = getRevenueByStatus(BookingStatus.COMPLETED);
         stats.put("revenueFromConfirmed", revenueFromConfirmed);
         stats.put("revenueFromCompleted", revenueFromCompleted);
 
@@ -236,11 +276,11 @@ public class BookingService {
     /**
      * Calculer le revenu pour un statut spécifique
      */
-    public Double getRevenueByStatus(BookingStatus status) {
+    public BigDecimal getRevenueByStatus(BookingStatus status) {
         List<Booking> bookings = bookingRepository.findByStatus(status);
         return bookings.stream()
-                .mapToDouble(Booking::getTotalPrice)
-                .sum();
+                .map(Booking::getTotalPrice)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
     }
 
     /**

@@ -19,11 +19,11 @@ public interface AvailabilityRepository extends MongoRepository<Availability, St
     Optional<Availability> findByPropertyIdAndDate(String propertyId, LocalDate date);
 
     // Trouver les disponibilités sur une période
-    @Query("{ 'propertyId': ?0, 'date': { $gte: ?1, $lte: ?2 } }")
+    @Query("{ 'propertyId': ?0, 'date': { $gte: ?1, $lt: ?2 } }")
     List<Availability> findAvailabilitiesInRange(String propertyId, LocalDate startDate, LocalDate endDate);
 
     // Trouver les dates disponibles (isAvailable = true) sur une période
-    @Query("{ 'propertyId': ?0, 'date': { $gte: ?1, $lte: ?2 }, 'isAvailable': true }")
+    @Query("{ 'propertyId': ?0, 'date': { $gte: ?1, $lt: ?2 }, 'isAvailable': true }")
     List<Availability> findAvailableDatesInRange(String propertyId, LocalDate startDate, LocalDate endDate);
 
     // Trouver les dates indisponibles
@@ -35,11 +35,11 @@ public interface AvailabilityRepository extends MongoRepository<Availability, St
     List<Availability> findDatesWithPriceOverride(String propertyId);
 
     // Trouver les prix spéciaux (priceOverride différent du prix de base)
-    @Query("{ 'propertyId': ?0, 'date': { $gte: ?1, $lte: ?2 }, 'priceOverride': { $ne: null } }")
+    @Query("{ 'propertyId': ?0, 'date': { $gte: ?1, $lt: ?2 }, 'priceOverride': { $ne: null } }")
     List<Availability> findPriceOverridesInRange(String propertyId, LocalDate startDate, LocalDate endDate);
 
     // Compter les jours disponibles dans une période
-    @Query(value = "{ 'propertyId': ?0, 'date': { $gte: ?1, $lte: ?2 }, 'isAvailable': true }",
+    @Query(value = "{ 'propertyId': ?0, 'date': { $gte: ?1, $lt: ?2 }, 'isAvailable': true }",
             count = true)
     long countAvailableDaysInRange(String propertyId, LocalDate startDate, LocalDate endDate);
 

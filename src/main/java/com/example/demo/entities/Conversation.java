@@ -7,6 +7,7 @@ import java.time.LocalDateTime;
 import java.util.List;
 
 @Document(collection = "conversations")
+@org.springframework.data.mongodb.core.index.CompoundIndex(name = "participants_unique", def = "{'user1Id':1,'user2Id':1}", unique = true)
 @Data
 @NoArgsConstructor
 @AllArgsConstructor
@@ -30,6 +31,12 @@ public class Conversation {
 
     // Statut
     private Boolean isArchived;  // Archivé par l'un des users
+    @Builder.Default
+    private Boolean archivedForUser1 = false;
+    @Builder.Default
+    private Boolean archivedForUser2 = false;
+    @org.springframework.data.annotation.Version
+    private Long version;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
 }

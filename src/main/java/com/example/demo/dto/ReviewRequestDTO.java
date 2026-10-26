@@ -26,6 +26,5 @@ public class ReviewRequestDTO {
     @NotBlank(message = "Comment cannot be empty")
     private String comment;
 
-    @NotNull(message = "Author ID is required")
     private String authorId;
 }

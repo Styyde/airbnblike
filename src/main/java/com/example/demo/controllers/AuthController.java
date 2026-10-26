@@ -23,7 +23,6 @@ import java.time.LocalDateTime;
 @RestController
 @RequestMapping("/api/auth")
 @RequiredArgsConstructor
-@CrossOrigin(origins = "http://localhost:4200")
 public class AuthController {
 
     private final UserService userService;
@@ -32,7 +31,6 @@ public class AuthController {
 
     @PostMapping("/register")
     public ResponseEntity<AuthResponseDTO> register(@Valid @RequestBody RegisterRequestDTO request) {
-        try {
             User user = userService.registerUser(
                     request.getUsername(),
                     request.getEmail(),
@@ -54,14 +52,6 @@ public class AuthController {
                     .build();
 
             return ResponseEntity.status(HttpStatus.CREATED).body(response);
-        } catch (RuntimeException e) {
-            AuthResponseDTO response = AuthResponseDTO.builder()
-                    .success(false)
-                    .message(e.getMessage())
-                    .timestamp(LocalDateTime.now())
-                    .build();
-            return ResponseEntity.badRequest().body(response);
-        }
     }
 
     @PostMapping("/login")
@@ -84,7 +74,7 @@ public class AuthController {
                         .collect(java.util.stream.Collectors.toSet()))
                 .token(jwt)
                 .tokenType("Bearer")
-                .expiresIn(86400000L)
+                .expiresIn(tokenProvider.getExpirationMs())
                 .build();
 
         AuthResponseDTO response = AuthResponseDTO.builder()

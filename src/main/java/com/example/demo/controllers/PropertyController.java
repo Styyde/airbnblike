@@ -2,6 +2,7 @@ package com.example.demo.controllers;
 
 import com.example.demo.annotations.CurrentUser;
 import com.example.demo.entities.Property;
+import com.example.demo.dto.PropertyRequestDTO;
 import com.example.demo.security.CustomUserDetails;
 import com.example.demo.services.PropertyService;
 import jakarta.validation.Valid;
@@ -16,7 +17,6 @@ import java.util.List;
 @RestController
 @RequestMapping("/api/properties")
 @RequiredArgsConstructor
-@CrossOrigin(origins = "http://localhost:4200")
 public class PropertyController {
 
     private final PropertyService propertyService;
@@ -28,7 +28,11 @@ public class PropertyController {
 
     @GetMapping("/{id}")
     public ResponseEntity<Property> getPropertyById(@PathVariable String id) {
-        return ResponseEntity.ok(propertyService.getPropertyById(id));
+        var property = propertyService.getPropertyById(id);
+        if (property.getStatus() != com.example.demo.Enums.PropertyStatus.AVAILABLE) {
+            throw com.example.demo.exceptions.ApiException.notFound("Logement introuvable");
+        }
+        return ResponseEntity.ok(property);
     }
 
     @GetMapping("/owner/me")
@@ -46,17 +50,18 @@ public class PropertyController {
     @PostMapping
     @PreAuthorize("hasAnyRole('OWNER', 'ADMIN')")
     public ResponseEntity<Property> createProperty(
-            @Valid @RequestBody Property property,
+            @Valid @RequestBody PropertyRequestDTO request,
             @CurrentUser CustomUserDetails currentUser) {
 
+        Property property = request.toEntity();
         property.setOwnerId(currentUser.getId());
         return ResponseEntity.status(HttpStatus.CREATED).body(propertyService.createProperty(property));
     }
 
     @PutMapping("/{id}")
     @PreAuthorize("hasRole('ADMIN') or @propertyService.getPropertyById(#id).ownerId == authentication.principal.id")
-    public ResponseEntity<Property> updateProperty(@PathVariable String id, @Valid @RequestBody Property property) {
-        return ResponseEntity.ok(propertyService.updateProperty(id, property));
+    public ResponseEntity<Property> updateProperty(@PathVariable String id, @Valid @RequestBody PropertyRequestDTO request) {
+        return ResponseEntity.ok(propertyService.updateProperty(id, request.toEntity()));
     }
 
     @DeleteMapping("/{id}")

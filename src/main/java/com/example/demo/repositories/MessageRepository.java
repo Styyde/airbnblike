@@ -81,8 +81,7 @@ public interface MessageRepository extends MongoRepository<Message, String> {
     /**
      * Trouver le dernier message d'une conversation
      */
-    @Query(value = "{ 'conversationId': ?0 }", sort = "{ 'timestamp': -1 }")
-    Optional<Message> findLastMessageByConversationId(String conversationId);
+    Optional<Message> findFirstByConversationIdOrderByTimestampDesc(String conversationId);
 
     /**
      * Trouver les messages après une certaine date
@@ -93,5 +92,6 @@ public interface MessageRepository extends MongoRepository<Message, String> {
      * Marquer tous les messages d'une conversation comme lus pour un destinataire
      */
     @Query("{ 'conversationId': ?0, 'receiverId': ?1, 'isRead': false }")
+    @org.springframework.data.mongodb.repository.Update("{ '$set': { 'isRead': true } }")
     void markAllAsReadByConversationIdAndReceiverId(String conversationId, String receiverId);
 }

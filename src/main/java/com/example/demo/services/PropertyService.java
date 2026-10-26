@@ -16,6 +16,9 @@ import java.time.LocalDate;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.stream.Collectors;
+import java.math.BigDecimal;
+import com.example.demo.exceptions.ApiException;
+import com.example.demo.repositories.AmenityRepository;
 @Service
 @RequiredArgsConstructor
 public class PropertyService {
@@ -23,12 +26,13 @@ public class PropertyService {
     private final PropertyRepository propertyRepository;
     private final BookingRepository bookingRepository;
     private final AvailabilityRepository availabilityRepository;
+    private final AmenityRepository amenityRepository;
 
     // ===== MÉTHODES CRUD DE BASE =====
 
     // Récupérer toutes les propriétés
     public List<Property> getAllProperties() {
-        return propertyRepository.findAll();
+        return getAllAvailableProperties();
     }
 
     // Récupérer toutes les propriétés disponibles
@@ -39,12 +43,16 @@ public class PropertyService {
     // Récupérer une propriété par son ID
     public Property getPropertyById(String id) {
         return propertyRepository.findById(id)
-                .orElseThrow(() -> new RuntimeException("Property not found with id: " + id));
+                .orElseThrow(() -> ApiException.notFound("Logement introuvable"));
     }
 
     // Créer une propriété
     @Transactional
     public Property createProperty(Property property) {
+        property.setId(null);
+        property.setVersion(null);
+        property.setCalendarRevision(0L);
+        validateAmenities(property);
         property.setStatus(PropertyStatus.AVAILABLE);
         return propertyRepository.save(property);
     }
@@ -53,6 +61,7 @@ public class PropertyService {
     @Transactional
     public Property updateProperty(String id, Property updatedProperty) {
         Property existingProperty = getPropertyById(id);
+        validateAmenities(updatedProperty);
 
         existingProperty.setTitle(updatedProperty.getTitle());
         existingProperty.setDescription(updatedProperty.getDescription());
@@ -66,6 +75,7 @@ public class PropertyService {
         existingProperty.setMaxGuests(updatedProperty.getMaxGuests());
         existingProperty.setBedrooms(updatedProperty.getBedrooms());
         existingProperty.setAmenityIds(updatedProperty.getAmenityIds());
+        existingProperty.setImageUrls(updatedProperty.getImageUrls());
 
         return propertyRepository.save(existingProperty);
     }
@@ -82,6 +92,9 @@ public class PropertyService {
     @Transactional
     public void hardDeleteProperty(String id) {
         Property property = getPropertyById(id);
+        if (!bookingRepository.findByPropertyId(id).isEmpty()) {
+            throw ApiException.conflict("Un logement avec des réservations doit être conservé dans l'historique");
+        }
         // Supprimer aussi les disponibilités associées
         availabilityRepository.deleteByPropertyId(id);
         propertyRepository.delete(property);
@@ -91,6 +104,7 @@ public class PropertyService {
 
     // Vérifier la disponibilité d'un logement sur une période
     public boolean isAvailable(String propertyId, LocalDate startDate, LocalDate endDate) {
+        StayDates.validate(startDate, endDate);
         Property property = getPropertyById(propertyId);
 
         if (property.getStatus() != PropertyStatus.AVAILABLE) {
@@ -112,7 +126,7 @@ public class PropertyService {
                 propertyId, startDate, endDate);
 
         for (Availability availability : availabilities) {
-            if (!availability.getIsAvailable()) {
+            if (Boolean.FALSE.equals(availability.getIsAvailable())) {
                 return false;
             }
         }
@@ -121,24 +135,34 @@ public class PropertyService {
     }
 
     // Calculer le prix total avec les price overrides
-    public Double calculateTotalPrice(String propertyId, LocalDate startDate, LocalDate endDate) {
+    public BigDecimal calculateTotalPrice(String propertyId, LocalDate startDate, LocalDate endDate) {
+        StayDates.validate(startDate, endDate);
         Property property = getPropertyById(propertyId);
 
         long nights = ChronoUnit.DAYS.between(startDate, endDate);
-        double basePrice = nights * property.getPricePerNight();
+        BigDecimal basePrice = property.getPricePerNight().multiply(BigDecimal.valueOf(nights));
 
         // Appliquer les price overrides
         List<Availability> availabilities = availabilityRepository.findAvailabilitiesInRange(
                 propertyId, startDate, endDate);
 
-        double totalPrice = basePrice;
+        BigDecimal totalPrice = basePrice;
         for (Availability availability : availabilities) {
             if (availability.getPriceOverride() != null) {
-                totalPrice = totalPrice - property.getPricePerNight() + availability.getPriceOverride();
+                totalPrice = totalPrice.subtract(property.getPricePerNight()).add(availability.getPriceOverride());
             }
         }
 
         return totalPrice;
+    }
+
+    private void validateAmenities(Property property) {
+        if (property.getAmenityIds() != null && !property.getAmenityIds().isEmpty()) {
+            var ids = new java.util.HashSet<>(property.getAmenityIds());
+            if (amenityRepository.findByIdIn(List.copyOf(ids)).size() != ids.size()) {
+                throw ApiException.badRequest("Équipement inconnu");
+            }
+        }
     }
 
     // Récupérer tous les logements d'un propriétaire
@@ -167,12 +191,12 @@ public class PropertyService {
     // ===== MÉTHODES DE RECHERCHE AVANCÉE =====
 
     // Recherche par fourchette de prix
-    public List<Property> searchByPriceRange(Double minPrice, Double maxPrice) {
+    public List<Property> searchByPriceRange(BigDecimal minPrice, BigDecimal maxPrice) {
         return propertyRepository.findByPricePerNightBetween(minPrice, maxPrice);
     }
 
     // Recherche multicritères
-    public List<Property> advancedSearch(String city, Integer guests, Double maxPrice) {
+    public List<Property> advancedSearch(String city, Integer guests, BigDecimal maxPrice) {
         if (city != null && guests != null && maxPrice != null) {
             return propertyRepository.advancedSearch(city, guests, maxPrice);
         } else if (city != null && guests != null) {

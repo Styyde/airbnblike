@@ -29,7 +29,13 @@ public class User {
     private String email;
 
     @NotBlank
+    @com.fasterxml.jackson.annotation.JsonIgnore
+    @lombok.ToString.Exclude
     private String password;
+
+    private boolean active = true;
+    @org.springframework.data.annotation.Version
+    private Long version;
 
     private Set<String> roles; // Exemple: ROLE_USER, ROLE_ADMIN
 }

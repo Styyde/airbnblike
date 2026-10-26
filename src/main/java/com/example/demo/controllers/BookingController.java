@@ -17,21 +17,16 @@ import java.util.List;
 @RestController
 @RequestMapping("/api/bookings")
 @RequiredArgsConstructor
-@CrossOrigin(origins = "http://localhost:4200")
 public class BookingController {
 
     private final BookingService bookingService;
+    private final com.example.demo.security.ResourceAccess access;
 
     @PostMapping
     @PreAuthorize("isAuthenticated()")
     public ResponseEntity<Booking> createBooking(
             @Valid @RequestBody BookingRequestDTO request,
             @CurrentUser CustomUserDetails currentUser) {
-
-        // Vérifier que l'utilisateur crée sa propre réservation
-        if (!request.getUserId().equals(currentUser.getId())) {
-            throw new RuntimeException("Cannot create booking for another user");
-        }
 
         return ResponseEntity.status(HttpStatus.CREATED).body(bookingService.createBooking(request));
     }
@@ -53,19 +48,14 @@ public class BookingController {
     @GetMapping("/property/{propertyId}")
     @PreAuthorize("isAuthenticated()")
     public ResponseEntity<List<Booking>> getBookingsByProperty(@PathVariable String propertyId) {
+        access.propertyOwner(propertyId);
         return ResponseEntity.ok(bookingService.getBookingsByProperty(propertyId));
     }
 
     @GetMapping("/{id}")
     @PreAuthorize("isAuthenticated()")
     public ResponseEntity<Booking> getBookingById(@PathVariable String id, @CurrentUser CustomUserDetails currentUser) {
-        Booking booking = bookingService.getBookingById(id);
-
-        // Vérifier que l'utilisateur a le droit de voir cette réservation
-        if (!booking.getUserId().equals(currentUser.getId()) && !currentUser.getAuthorities().stream()
-                .anyMatch(a -> a.getAuthority().equals("ROLE_ADMIN"))) {
-            throw new RuntimeException("Access denied to this booking");
-        }
+        Booking booking = access.bookingParticipant(id);
 
         return ResponseEntity.ok(booking);
     }
@@ -73,19 +63,13 @@ public class BookingController {
     @PutMapping("/{id}/cancel")
     @PreAuthorize("isAuthenticated()")
     public ResponseEntity<Void> cancelBooking(@PathVariable String id, @CurrentUser CustomUserDetails currentUser) {
-        Booking booking = bookingService.getBookingById(id);
-
-        if (!booking.getUserId().equals(currentUser.getId())) {
-            throw new RuntimeException("Only the booking owner can cancel this booking");
-        }
-
         bookingService.cancelBooking(id);
         return ResponseEntity.noContent().build();
     }
 
-    @PutMapping("/{id}/confirm")
+    @PutMapping("/{id}/complete")
     @PreAuthorize("hasRole('OWNER') or hasRole('ADMIN')")
-    public ResponseEntity<Booking> confirmBooking(@PathVariable String id) {
-        return ResponseEntity.ok(bookingService.confirmBooking(id));
+    public ResponseEntity<Booking> completeBooking(@PathVariable String id) {
+        return ResponseEntity.ok(bookingService.completeBooking(id));
     }
 }

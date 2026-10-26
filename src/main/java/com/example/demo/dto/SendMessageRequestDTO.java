@@ -13,7 +13,6 @@ import lombok.NoArgsConstructor;
 @AllArgsConstructor
 public class SendMessageRequestDTO {
 
-    @NotBlank(message = "Sender ID is required")
     private String senderId;
 
     @NotBlank(message = "Receiver ID is required")

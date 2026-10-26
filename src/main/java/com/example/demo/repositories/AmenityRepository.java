@@ -21,11 +21,6 @@ public interface AmenityRepository extends MongoRepository<Amenity, String> {
     @Query("{ 'name': { $regex: ?0, $options: 'i' } }")
     List<Amenity> searchByName(String keyword);
 
-    // Trouver les équipements populaires (ceux qui apparaissent le plus dans les propriétés)
-    // Note: Cette requête nécessite une agrégation plus complexe
-    @Query(value = "{}", sort = "{ 'usageCount': -1 }")
-    List<Amenity> findMostUsedAmenities();
-
     // Trouver par liste d'IDs
     List<Amenity> findByIdIn(List<String> ids);
 

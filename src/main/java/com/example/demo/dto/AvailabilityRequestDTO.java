@@ -21,12 +21,13 @@ public class AvailabilityRequestDTO {
     private String propertyId;
 
     @NotNull(message = "Date is required")
-    @Future(message = "Date must be in the future")
+    @jakarta.validation.constraints.FutureOrPresent
     @DateTimeFormat(iso = DateTimeFormat.ISO.DATE)
     private LocalDate date;
 
     private Boolean isAvailable;
 
-    @Min(value = 0, message = "Price override cannot be negative")
-    private Double priceOverride;
+    @jakarta.validation.constraints.DecimalMin("0.01")
+    @jakarta.validation.constraints.Digits(integer = 10, fraction = 2)
+    private java.math.BigDecimal priceOverride;
 }

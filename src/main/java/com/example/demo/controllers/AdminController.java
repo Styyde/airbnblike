@@ -17,7 +17,6 @@ import java.util.Map;
 @RequestMapping("/api/admin")
 @RequiredArgsConstructor
 @PreAuthorize("hasRole('ADMIN')")
-@CrossOrigin(origins = "http://localhost:4200")
 public class AdminController {
 
     private final UserService userService;
@@ -25,13 +24,13 @@ public class AdminController {
     private final BookingService bookingService;
 
     @GetMapping("/users")
-    public ResponseEntity<List<User>> getAllUsers() {
-        return ResponseEntity.ok(userService.getAllUsers());
+    public ResponseEntity<List<com.example.demo.dto.UserResponseDTO>> getAllUsers() {
+        return ResponseEntity.ok(userService.getAllUsers().stream().map(userService::toDTO).toList());
     }
 
     @PutMapping("/users/{userId}/role")
-    public ResponseEntity<User> assignRole(@PathVariable String userId, @RequestParam String role) {
-        return ResponseEntity.ok(userService.assignRole(userId, role));
+    public ResponseEntity<com.example.demo.dto.UserResponseDTO> assignRole(@PathVariable String userId, @RequestParam String role) {
+        return ResponseEntity.ok(userService.toDTO(userService.assignRole(userId, role)));
     }
 
     @DeleteMapping("/users/{userId}")
@@ -48,5 +47,11 @@ public class AdminController {
         stats.put("totalBookings", bookingService.countAllBookings());
         stats.put("totalRevenue", bookingService.getTotalRevenue());
         return ResponseEntity.ok(stats);
+    }
+
+    @PutMapping("/properties/{propertyId}/status")
+    public ResponseEntity<com.example.demo.entities.Property> updatePropertyStatus(
+            @PathVariable String propertyId, @RequestParam com.example.demo.Enums.PropertyStatus status) {
+        return ResponseEntity.ok(propertyService.updateStatus(propertyId, status));
     }
 }

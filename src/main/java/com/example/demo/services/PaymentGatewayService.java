@@ -1,39 +1,32 @@
 package com.example.demo.services;
 
 import com.example.demo.Enums.PaymentMethod;
-import lombok.extern.slf4j.Slf4j;
+import com.example.demo.exceptions.ApiException;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
-
+import java.math.BigDecimal;
 import java.util.UUID;
 
+/** Explicit demo gateway. Real payments require a separate provider adapter and webhooks. */
 @Service
-@Slf4j
 public class PaymentGatewayService {
+    private final String mode;
 
-    /**
-     * Simuler un appel à Stripe/PayPal
-     */
-    public String charge(Double amount, PaymentMethod method, String userId) {
-        log.info("Processing payment of {} via {} for user {}", amount, method, userId);
+    public PaymentGatewayService(@Value("${app.payment.mode:disabled}") String mode) { this.mode = mode; }
 
-        // Simulation : 5% de chance d'échec
-        if (Math.random() < 0.05) {
-            throw new RuntimeException("Transaction declined by bank");
-        }
-
-        return "txn_" + UUID.randomUUID().toString();
+    public void requireEnabled() {
+        if (!"demo".equals(mode)) throw new ApiException(HttpStatus.SERVICE_UNAVAILABLE, "Paiement désactivé ; activer explicitement le mode demo");
     }
 
-    /**
-     * Remboursement
-     */
-    public void refund(String paymentId, Double amount) {
-        log.info("Refunding {} for payment {}", amount, paymentId);
+    public String charge(BigDecimal amount, PaymentMethod method, String userId) {
+        requireEnabled();
+        if (amount == null || amount.signum() <= 0 || method == null) throw ApiException.badRequest("Paiement invalide");
+        return "demo_" + UUID.randomUUID();
+    }
 
-        if (Math.random() < 0.02) {
-            throw new RuntimeException("Refund failed: insufficient balance");
-        }
-
-        log.info("Refund successful for payment {}", paymentId);
+    public void refund(String transactionId, BigDecimal amount) {
+        requireEnabled();
+        if (transactionId == null || !transactionId.startsWith("demo_")) throw ApiException.conflict("Transaction de démonstration introuvable");
     }
 }

@@ -31,3 +31,30 @@ build/
 
 ### VS Code ###
 .vscode/
+.env
+.env.*
+!.env.example
+
+### Local credentials and machine configuration ###
+/.aws/
+/.codex/
+/.agents/
+/secrets/
+*.pem
+*.key
+*.p12
+*.pfx
+src/main/resources/application-local.*
+src/main/resources/application-*.local.*
+
+### Generated files, caches and local database exports ###
+/.m2/
+/logs/
+*.log
+*.log.*
+hs_err_pid*
+/data/
+/dump/
+/backups/
+.DS_Store
+Thumbs.db

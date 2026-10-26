@@ -24,7 +24,7 @@ public interface PaymentRepository extends MongoRepository<Payment, String> {
     List<Payment> findFailedPaymentsSince(LocalDateTime since);
 
     // Trouver les paiements par méthode
-    List<Payment> findByMethod(String method);
+    List<Payment> findByMethod(com.example.demo.Enums.PaymentMethod method);
 
     // Calculer le montant total des paiements complétés pour une période
     @Query(value = "{ 'status': 'COMPLETED', 'paymentDate': { $gte: ?0, $lte: ?1 } }",
