@@ -8,6 +8,8 @@ public class BookingRequestDTO {
     @jakarta.validation.constraints.NotBlank
     private String propertyId;
     private String userId;
+    @jakarta.validation.constraints.Size(max = 1000)
+    private String guestMessage;
     @jakarta.validation.constraints.NotNull
     @jakarta.validation.constraints.FutureOrPresent
     private LocalDate startDate;

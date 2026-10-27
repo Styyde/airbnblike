@@ -80,6 +80,10 @@ public class ConversationService {
      * Récupérer toutes les conversations d'un utilisateur
      */
     public List<ConversationDTO> getUserConversations(String userId) {
+        return getUserConversations(userId, false);
+    }
+
+    public List<ConversationDTO> getUserConversations(String userId, boolean archived) {
         // Vérifier que l'utilisateur existe
         userRepository.findById(userId)
                 .orElseThrow(() -> com.example.demo.exceptions.ApiException.notFound("Utilisateur non trouvé"));
@@ -88,7 +92,7 @@ public class ConversationService {
                 .findAllConversationsByUserId(userId);
 
         return conversations.stream()
-                .filter(conv -> !Boolean.TRUE.equals(userId.equals(conv.getUser1Id()) ? conv.getArchivedForUser1() : conv.getArchivedForUser2()))
+                .filter(conv -> Boolean.TRUE.equals(userId.equals(conv.getUser1Id()) ? conv.getArchivedForUser1() : conv.getArchivedForUser2()) == archived)
                 .map(conv -> convertToDTO(conv, userId))
                 .sorted(Comparator.comparing(ConversationDTO::getLastMessageAt,
                         Comparator.nullsLast(Comparator.reverseOrder())))

@@ -26,7 +26,7 @@ import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 
-@SpringBootTest(properties = {"app.payment.mode=demo", "app.booking.expiry-enabled=false"})
+@SpringBootTest(properties = {"app.payment.mode=demo", "app.booking.expiry-enabled=false", "app.upload-dir=./target/test-uploads"})
 @AutoConfigureMockMvc
 @Testcontainers
 @org.springframework.test.annotation.DirtiesContext(classMode = org.springframework.test.annotation.DirtiesContext.ClassMode.AFTER_CLASS)
@@ -87,7 +87,9 @@ class BackendIT {
         assertThat(result.getResponse().getStatus()).as(result.getResponse().getContentAsString()).isEqualTo(201);
         return json.readTree(result.getResponse().getContentAsString());
     }
+    void accept(String id) throws Exception { status(200, put("/api/bookings/" + id + "/accept").header("Authorization", "Bearer " + hostToken)); }
     JsonNode pay(String bookingId) throws Exception {
+        if (bookingRepository.findById(bookingId).orElseThrow().getStatus() == BookingStatus.REQUESTED) accept(bookingId);
         var result = mvc.perform(post("/api/payments/process/" + bookingId).param("method", "CREDIT_CARD")
                 .header("Authorization", "Bearer " + guestToken)).andReturn();
         assertThat(result.getResponse().getStatus()).as(result.getResponse().getContentAsString()).isEqualTo(200);
@@ -164,6 +166,7 @@ class BackendIT {
 
     @Test void failedGatewayRollsBackPaymentAndBookingTogether() throws Exception {
         String id = createBooking().path("id").asText();
+        accept(id);
         doThrow(com.example.demo.exceptions.ApiException.conflict("Défaillance simulée")).when(gateway).charge(any(), any(), any());
         status(409, post("/api/payments/process/" + id).param("method", "CREDIT_CARD").header("Authorization", "Bearer " + guestToken));
         assertThat(paymentRepository.count()).isZero();
@@ -185,7 +188,7 @@ class BackendIT {
     }
 
     @Test void calendarRequiresOwnerAndCannotBlockBookedNights() throws Exception {
-        createBooking();
+        accept(createBooking().path("id").asText());
         String body = json.writeValueAsString(Map.of("propertyId",property.getId(),"date",start.toString(),"isAvailable",false));
         status(403, put("/api/availabilities").header("Authorization", "Bearer " + outsiderToken).contentType("application/json").content(body));
         status(409, put("/api/availabilities").header("Authorization", "Bearer " + hostToken).contentType("application/json").content(body));
@@ -238,11 +241,11 @@ class BackendIT {
     @Test void pendingBookingsExpireAndReleaseTheDates() throws Exception {
         String id = createBooking().path("id").asText();
         var booking = bookingRepository.findById(id).orElseThrow();
-        booking.setExpiresAt(LocalDateTime.now().minusMinutes(1));
+        booking.setExpiresAt(Instant.now().minusSeconds(60));
         bookingRepository.save(booking);
         status(409, post("/api/payments/process/" + id).param("method","CREDIT_CARD").header("Authorization", "Bearer " + guestToken));
         bookings.expireBooking(id);
-        assertThat(bookingRepository.findById(id).orElseThrow().getStatus()).isEqualTo(BookingStatus.CANCELLED);
+        assertThat(bookingRepository.findById(id).orElseThrow().getStatus()).isEqualTo(BookingStatus.EXPIRED);
         createBooking();
     }
 
@@ -261,5 +264,117 @@ class BackendIT {
         assertThat(created.path("status").asText()).isEqualTo("AVAILABLE");
         status(204, delete("/api/properties/" + property.getId()).header("Authorization", "Bearer " + hostToken));
         status(404, get("/api/properties/" + property.getId()));
+    }
+
+    @Test void hostChoosesAmongRequestsAndOnlyPaymentClosesCompetitors() throws Exception {
+        var first=createBooking();
+        String firstId=first.path("id").asText();
+        assertThat(first.path("status").asText()).isEqualTo("REQUESTED");
+        assertThat(Instant.parse(first.path("expiresAt").asText())).isBetween(Instant.now().plusSeconds(172700),Instant.now().plusSeconds(172900));
+        var result=mvc.perform(post("/api/bookings").header("Authorization","Bearer "+outsiderToken)
+                .contentType("application/json").content(json.writeValueAsString(request(start,start.plusDays(2),1)))).andReturn();
+        assertThat(result.getResponse().getStatus()).isEqualTo(201);
+        String other=json.readTree(result.getResponse().getContentAsString()).path("id").asText();
+        status(409,post("/api/payments/process/"+firstId).param("method","CREDIT_CARD").header("Authorization","Bearer "+guestToken));
+        verify(gateway,never()).charge(any(),any(),any());
+        status(403,put("/api/bookings/"+firstId+"/accept").header("Authorization","Bearer "+guestToken));
+        status(403,put("/api/bookings/"+firstId+"/reject").header("Authorization","Bearer "+outsiderToken));
+        var publicQuote=mvc.perform(get("/api/properties/"+property.getId()+"/quote").param("startDate",start.toString())
+                .param("endDate",start.plusDays(2).toString()).param("guests","1")).andReturn();
+        assertThat(json.readTree(publicQuote.getResponse().getContentAsString()).path("available").asBoolean()).isTrue();
+        accept(firstId);
+        var expiry=bookingRepository.findById(firstId).orElseThrow().getExpiresAt();
+        assertThat(expiry).isBetween(Instant.now().plusSeconds(1700),Instant.now().plusSeconds(1810));
+        accept(firstId);
+        assertThat(bookingRepository.findById(firstId).orElseThrow().getExpiresAt()).isEqualTo(expiry);
+        status(409,put("/api/bookings/"+other+"/accept").header("Authorization","Bearer "+hostToken));
+        assertThat(bookingRepository.findById(other).orElseThrow().getStatus()).isEqualTo(BookingStatus.REQUESTED);
+        pay(firstId);
+        assertThat(bookingRepository.findById(other).orElseThrow().getStatus()).isEqualTo(BookingStatus.REJECTED);
+        var hostList=mvc.perform(get("/api/bookings/host/me").header("Authorization","Bearer "+hostToken)).andReturn();
+        assertThat(hostList.getResponse().getStatus()).isEqualTo(200);
+        var list=json.readTree(hostList.getResponse().getContentAsString());
+        assertThat(list).hasSize(2);
+        assertThat(list.get(0).path("travelerName").asText()).isNotBlank();
+        assertThat(list.get(0).path("propertyTitle").asText()).isEqualTo("Maison");
+    }
+
+    @Test void simultaneousHostAcceptancesHaveOnlyOneWinner() throws Exception {
+        String first=createBooking().path("id").asText();
+        var result=mvc.perform(post("/api/bookings").header("Authorization","Bearer "+outsiderToken)
+                .contentType("application/json").content(json.writeValueAsString(request(start,start.plusDays(2),1)))).andReturn();
+        String second=json.readTree(result.getResponse().getContentAsString()).path("id").asText();
+        var barrier=new CyclicBarrier(2);
+        var executor=Executors.newFixedThreadPool(2);
+        try {
+            var a=executor.submit(()->{barrier.await(10,TimeUnit.SECONDS);return mvc.perform(put("/api/bookings/"+first+"/accept").header("Authorization","Bearer "+hostToken)).andReturn().getResponse().getStatus();});
+            var b=executor.submit(()->{barrier.await(10,TimeUnit.SECONDS);return mvc.perform(put("/api/bookings/"+second+"/accept").header("Authorization","Bearer "+hostToken)).andReturn().getResponse().getStatus();});
+            assertThat(List.of(a.get(30,TimeUnit.SECONDS),b.get(30,TimeUnit.SECONDS))).containsExactlyInAnyOrder(200,409);
+            assertThat(bookingRepository.countByStatus(BookingStatus.PENDING)).isEqualTo(1);
+            assertThat(bookingRepository.countByStatus(BookingStatus.REQUESTED)).isEqualTo(1);
+        } finally {executor.shutdownNow();}
+    }
+
+    @Test void expiredAcceptanceReleasesDatesAndRequestedPriceIsFrozen() throws Exception {
+        String id=createBooking().path("id").asText();
+        var result=mvc.perform(post("/api/bookings").header("Authorization","Bearer "+outsiderToken)
+                .contentType("application/json").content(json.writeValueAsString(request(start,start.plusDays(2),1)))).andReturn();
+        String second=json.readTree(result.getResponse().getContentAsString()).path("id").asText();
+        accept(id);
+        var expired=bookingRepository.findById(id).orElseThrow();
+        expired.setExpiresAt(Instant.now().minusSeconds(1));
+        bookingRepository.save(expired);
+        bookings.expireBooking(id);
+        availabilityRepository.save(new Availability(null,property.getId(),start,true,new BigDecimal("999")));
+        accept(second);
+        assertThat(bookingRepository.findById(second).orElseThrow().getTotalPrice()).isEqualByComparingTo("0.20");
+        assertThat(bookingRepository.findById(id).orElseThrow().getStatus()).isEqualTo(BookingStatus.EXPIRED);
+    }
+
+    @Test void publicSearchQuoteAndCalendarDoNotRevealTravelers() throws Exception {
+        status(200,get("/api/search/properties"));
+        status(200,get("/api/search/properties").param("city","par").param("guests","2"));
+        status(400,get("/api/search/properties").param("startDate",start.toString()));
+        status(400,get("/api/search/properties").param("minPrice","100").param("maxPrice","1"));
+        String id=createBooking().path("id").asText();
+        accept(id);
+        var response=mvc.perform(get("/api/properties/"+property.getId()+"/calendar").param("startDate",start.toString()).param("endDate",start.plusDays(3).toString())).andReturn();
+        assertThat(response.getResponse().getStatus()).isEqualTo(200);
+        String body=response.getResponse().getContentAsString();
+        assertThat(body).doesNotContain(guest.getId(),"userId","travelerName","bookingId",id);
+        var days=json.readTree(body);
+        assertThat(days).hasSize(3);
+        assertThat(days.get(0).path("available").asBoolean()).isFalse();
+        assertThat(days.get(2).path("available").asBoolean()).isTrue();
+    }
+
+    @Test void onlyTheHostCanRejectWithABoundedReason() throws Exception {
+        String id=createBooking().path("id").asText();
+        status(403,put("/api/bookings/"+id+"/reject").header("Authorization","Bearer "+guestToken));
+        status(400,put("/api/bookings/"+id+"/reject").header("Authorization","Bearer "+hostToken)
+                .contentType("application/json").content(json.writeValueAsString(Map.of("reason","x".repeat(501)))));
+        status(200,put("/api/bookings/"+id+"/reject").header("Authorization","Bearer "+hostToken)
+                .contentType("application/json").content(json.writeValueAsString(Map.of("reason","Un imprévu nous empêche de vous accueillir."))));
+        assertThat(bookingRepository.findById(id).orElseThrow().getDecisionReason()).contains("imprévu");
+        status(409,post("/api/payments/process/"+id).param("method","CREDIT_CARD").header("Authorization","Bearer "+guestToken));
+    }
+
+    @Test void imageUploadValidatesContentOwnershipAndServesReencodedPhotos() throws Exception {
+        var bytes=new java.io.ByteArrayOutputStream();
+        javax.imageio.ImageIO.write(new java.awt.image.BufferedImage(16,16,java.awt.image.BufferedImage.TYPE_INT_RGB),"png",bytes);
+        var file=new org.springframework.mock.web.MockMultipartFile("files","chambre.png","image/png",bytes.toByteArray());
+        status(403,multipart("/api/uploads/images").file(file).header("Authorization","Bearer "+guestToken));
+        status(400,multipart("/api/uploads/images").file(new org.springframework.mock.web.MockMultipartFile("files","fake.png","image/png","not an image".getBytes())).header("Authorization","Bearer "+hostToken));
+        var response=mvc.perform(multipart("/api/uploads/images").file(file).header("Authorization","Bearer "+hostToken)).andReturn();
+        assertThat(response.getResponse().getStatus()).as(response.getResponse().getContentAsString()).isEqualTo(201);
+        String url=json.readTree(response.getResponse().getContentAsString()).get(0).path("url").asText();
+        status(200,get(url));
+        var body=Map.of("title","Une belle adresse","type","ENTIRE_HOME","address","12 rue Test","city","Rabat","country","Maroc",
+                "pricePerNight",500,"maxGuests",2,"bedrooms",1,"imageUrls",List.of(url));
+        users.addRole(outsider.getId(),Role.ROLE_OWNER);
+        status(400,post("/api/properties").header("Authorization","Bearer "+outsiderToken).contentType("application/json").content(json.writeValueAsString(body)));
+        assertThat(propertyRepository.count()).isEqualTo(1);
+        status(201,post("/api/properties").header("Authorization","Bearer "+hostToken).contentType("application/json").content(json.writeValueAsString(body)));
+        assertThat(propertyRepository.count()).isEqualTo(2);
     }
 }

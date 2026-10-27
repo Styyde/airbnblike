@@ -6,6 +6,7 @@ import org.springframework.data.mongodb.MongoDatabaseFactory;
 import org.springframework.data.mongodb.MongoTransactionManager;
 
 @Configuration
+@org.springframework.scheduling.annotation.EnableScheduling
 public class MongoConfig {
     @Bean
     MongoTransactionManager transactionManager(MongoDatabaseFactory factory) {

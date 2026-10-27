@@ -38,5 +38,7 @@ public class Booking {
     private LocalDateTime createdAt = LocalDateTime.now();
 
     private LocalDateTime updatedAt;  // Pour le suivi des modifications
-    private LocalDateTime expiresAt;
+    private java.time.Instant expiresAt;
+    private String guestMessage;
+    private String decisionReason;
 }

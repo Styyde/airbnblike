@@ -17,6 +17,8 @@ import java.util.Map;
 
 @RestControllerAdvice
 public class ApiExceptionHandler {
+    @ExceptionHandler(org.springframework.web.multipart.MaxUploadSizeExceededException.class)
+    public ResponseEntity<?> imageSize(HttpServletRequest request) { return error(HttpStatus.PAYLOAD_TOO_LARGE, "Chaque photo doit peser au maximum 5 Mo.", request); }
     private ResponseEntity<?> error(HttpStatus status, String message, HttpServletRequest request) {
         return ResponseEntity.status(status).body(Map.of("timestamp", Instant.now().toString(),
                 "status", status.value(), "message", message, "path", request.getRequestURI()));

@@ -34,7 +34,7 @@ public class PaymentService {
             throw ApiException.conflict("Réservation non payable");
         }
         if (booking.getStartDate().isBefore(LocalDate.now())) throw ApiException.conflict("Réservation expirée");
-        if (booking.getExpiresAt() != null && !booking.getExpiresAt().isAfter(LocalDateTime.now())) throw ApiException.conflict("Réservation expirée");
+        if (booking.getExpiresAt() != null && !booking.getExpiresAt().isAfter(java.time.Instant.now())) throw ApiException.conflict("Réservation expirée");
         paymentGatewayService.requireEnabled();
         Payment payment = Payment.builder().bookingId(bookingId).amount(booking.getTotalPrice())
                 .method(method).status(PaymentStatus.PENDING).build();
@@ -45,6 +45,12 @@ public class PaymentService {
         booking.setStatus(BookingStatus.CONFIRMED);
         booking.setUpdatedAt(LocalDateTime.now());
         bookingRepository.save(booking);
+        for (Booking other : bookingRepository.findOverlappingRequests(booking.getPropertyId(), booking.getStartDate(), booking.getEndDate())) {
+            other.setStatus(BookingStatus.REJECTED);
+            other.setDecisionReason("Ces dates ont été réservées par un autre voyageur.");
+            other.setUpdatedAt(LocalDateTime.now());
+            bookingRepository.save(other);
+        }
         return payment;
     }
 

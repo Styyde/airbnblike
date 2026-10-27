@@ -18,9 +18,9 @@ public class ConversationController {
     private final ResourceAccess access;
 
     @GetMapping("/user/{userId}")
-    public ResponseEntity<List<ConversationDTO>> getUserConversations(@PathVariable String userId) {
+    public ResponseEntity<List<ConversationDTO>> getUserConversations(@PathVariable String userId, @RequestParam(defaultValue="false") boolean archived) {
         access.self(userId);
-        return ResponseEntity.ok(conversationService.getUserConversations(userId));
+        return ResponseEntity.ok(conversationService.getUserConversations(userId, archived));
     }
 
     @PostMapping

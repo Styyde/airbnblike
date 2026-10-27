@@ -14,7 +14,11 @@ import java.util.Optional;
 
 @Repository
 public interface BookingRepository extends MongoRepository<Booking, String> {
-    List<Booking> findByStatusAndExpiresAtBefore(BookingStatus status, LocalDateTime now);
+    List<Booking> findByStatusAndExpiresAtBefore(BookingStatus status, java.time.Instant now);
+    List<Booking> findByStatusInAndExpiresAtBefore(List<BookingStatus> statuses, java.time.Instant now);
+    List<Booking> findByPropertyIdIn(List<String> propertyIds);
+    @Query("{ 'propertyId': ?0, 'status': 'REQUESTED', 'startDate': { $lt: ?2 }, 'endDate': { $gt: ?1 } }")
+    List<Booking> findOverlappingRequests(String propertyId, LocalDate start, LocalDate end);
 
     // Trouver les réservations d'un utilisateur
     List<Booking> findByUserId(String userId);

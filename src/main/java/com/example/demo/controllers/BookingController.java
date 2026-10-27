@@ -1,75 +1,51 @@
 package com.example.demo.controllers;
 
-import com.example.demo.annotations.CurrentUser;
-import com.example.demo.dto.BookingRequestDTO;
-import com.example.demo.entities.Booking;
-import com.example.demo.security.CustomUserDetails;
-import com.example.demo.services.BookingService;
+import com.example.demo.dto.*;
+import com.example.demo.security.ResourceAccess;
+import com.example.demo.services.*;
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.Size;
 import lombok.RequiredArgsConstructor;
-import org.springframework.http.HttpStatus;
-import org.springframework.http.ResponseEntity;
+import org.springframework.http.*;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
-
 import java.util.List;
 
 @RestController
 @RequestMapping("/api/bookings")
 @RequiredArgsConstructor
 public class BookingController {
-
-    private final BookingService bookingService;
-    private final com.example.demo.security.ResourceAccess access;
+    private final BookingService service;
+    private final ResourceAccess access;
+    private final ViewService views;
 
     @PostMapping
-    @PreAuthorize("isAuthenticated()")
-    public ResponseEntity<Booking> createBooking(
-            @Valid @RequestBody BookingRequestDTO request,
-            @CurrentUser CustomUserDetails currentUser) {
-
-        return ResponseEntity.status(HttpStatus.CREATED).body(bookingService.createBooking(request));
+    public ResponseEntity<BookingView> create(@Valid @RequestBody BookingRequestDTO request) {
+        return ResponseEntity.status(HttpStatus.CREATED).body(views.booking(service.createBooking(request)));
     }
-
     @GetMapping("/user/me")
-    @PreAuthorize("isAuthenticated()")
-    public ResponseEntity<List<Booking>> getMyBookings(@CurrentUser CustomUserDetails currentUser) {
-        return ResponseEntity.ok(bookingService.getBookingsByUser(currentUser.getId()));
-    }
-
+    public List<BookingView> mine() { return service.getBookingsByUser(access.current().getId()).stream().map(views::booking).toList(); }
+    @GetMapping("/host/me")
+    @PreAuthorize("hasAnyRole('OWNER','ADMIN')")
+    public List<BookingView> host() { return service.getHostBookings().stream().map(views::booking).toList(); }
     @GetMapping("/user/{userId}")
     @PreAuthorize("hasRole('ADMIN') or #userId == authentication.principal.id")
-    public ResponseEntity<List<Booking>> getBookingsByUser(
-            @PathVariable String userId,
-            @CurrentUser CustomUserDetails currentUser) {
-        return ResponseEntity.ok(bookingService.getBookingsByUser(userId));
-    }
-
+    public List<BookingView> byUser(@PathVariable String userId) { return service.getBookingsByUser(userId).stream().map(views::booking).toList(); }
     @GetMapping("/property/{propertyId}")
-    @PreAuthorize("isAuthenticated()")
-    public ResponseEntity<List<Booking>> getBookingsByProperty(@PathVariable String propertyId) {
-        access.propertyOwner(propertyId);
-        return ResponseEntity.ok(bookingService.getBookingsByProperty(propertyId));
+    public List<BookingView> byProperty(@PathVariable String propertyId) {
+        access.propertyOwner(propertyId); return service.getBookingsByProperty(propertyId).stream().map(views::booking).toList();
     }
-
     @GetMapping("/{id}")
-    @PreAuthorize("isAuthenticated()")
-    public ResponseEntity<Booking> getBookingById(@PathVariable String id, @CurrentUser CustomUserDetails currentUser) {
-        Booking booking = access.bookingParticipant(id);
-
-        return ResponseEntity.ok(booking);
+    public BookingView one(@PathVariable String id) { return views.booking(access.bookingParticipant(id)); }
+    @PutMapping("/{id}/accept")
+    public BookingView accept(@PathVariable String id) { return views.booking(service.accept(id)); }
+    public record Decision(@Size(max=500) String reason) {}
+    @PutMapping("/{id}/reject")
+    public BookingView reject(@PathVariable String id, @Valid @RequestBody(required=false) Decision decision) {
+        return views.booking(service.reject(id, decision == null ? null : decision.reason()));
     }
-
     @PutMapping("/{id}/cancel")
-    @PreAuthorize("isAuthenticated()")
-    public ResponseEntity<Void> cancelBooking(@PathVariable String id, @CurrentUser CustomUserDetails currentUser) {
-        bookingService.cancelBooking(id);
-        return ResponseEntity.noContent().build();
-    }
-
+    public ResponseEntity<Void> cancel(@PathVariable String id) { service.cancelBooking(id); return ResponseEntity.noContent().build(); }
     @PutMapping("/{id}/complete")
-    @PreAuthorize("hasRole('OWNER') or hasRole('ADMIN')")
-    public ResponseEntity<Booking> completeBooking(@PathVariable String id) {
-        return ResponseEntity.ok(bookingService.completeBooking(id));
-    }
+    public BookingView complete(@PathVariable String id) { return views.booking(service.completeBooking(id)); }
 }

@@ -110,6 +110,8 @@ public class ReviewService {
     // Convertir en DTO (public)
     public ReviewDTO toDTO(Review review) {
         ReviewDTO dto = new ReviewDTO();
+        dto.setId(review.getId());
+        dto.setAuthorId(review.getAuthorId());
         userRepository.findById(review.getAuthorId()).ifPresent(user ->
                 dto.setAuthorName(user.getUsername()));
         dto.setRating(review.getRating());

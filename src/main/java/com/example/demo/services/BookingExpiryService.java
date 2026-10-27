@@ -21,7 +21,7 @@ public class BookingExpiryService {
 
     @Scheduled(fixedDelay = 60000, initialDelay = 60000)
     public void expire() {
-        for (var booking : repository.findByStatusAndExpiresAtBefore(BookingStatus.PENDING, LocalDateTime.now())) {
+        for (var booking : repository.findByStatusInAndExpiresAtBefore(java.util.List.of(BookingStatus.REQUESTED, BookingStatus.PENDING), java.time.Instant.now())) {
             try { service.expireBooking(booking.getId()); }
             catch (org.springframework.dao.TransientDataAccessException ex) {
                 log.debug("Expiration concurrente de {} ; nouvel essai au prochain passage", booking.getId());

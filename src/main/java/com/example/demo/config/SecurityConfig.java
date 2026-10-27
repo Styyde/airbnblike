@@ -73,7 +73,7 @@ public class SecurityConfig {
                 .authorizeHttpRequests(auth -> auth
                         // Endpoints publics
                         .requestMatchers("/api/auth/register", "/api/auth/login").permitAll()
-                        .requestMatchers(HttpMethod.GET, "/api/search/**", "/api/properties", "/api/properties/*", "/api/reviews/property/*", "/api/amenities").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/api/search/**", "/api/properties", "/api/properties/*", "/api/properties/*/quote", "/api/properties/*/calendar", "/api/reviews/property/*", "/api/amenities", "/media/*").permitAll()
                         .requestMatchers("/api/public/**", "/actuator/health").permitAll()
                         // Documentation API
                         .requestMatchers("/swagger-ui/**", "/v3/api-docs/**", "/swagger-ui.html").permitAll()

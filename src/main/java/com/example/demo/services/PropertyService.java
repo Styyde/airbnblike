@@ -27,6 +27,7 @@ public class PropertyService {
     private final BookingRepository bookingRepository;
     private final AvailabilityRepository availabilityRepository;
     private final AmenityRepository amenityRepository;
+    private final ImageStore images;
 
     // ===== MÉTHODES CRUD DE BASE =====
 
@@ -54,7 +55,9 @@ public class PropertyService {
         property.setCalendarRevision(0L);
         validateAmenities(property);
         property.setStatus(PropertyStatus.AVAILABLE);
-        return propertyRepository.save(property);
+        property = propertyRepository.save(property);
+        images.attach(property);
+        return property;
     }
 
     // Mettre à jour une propriété
@@ -77,7 +80,9 @@ public class PropertyService {
         existingProperty.setAmenityIds(updatedProperty.getAmenityIds());
         existingProperty.setImageUrls(updatedProperty.getImageUrls());
 
-        return propertyRepository.save(existingProperty);
+        existingProperty = propertyRepository.save(existingProperty);
+        images.attach(existingProperty);
+        return existingProperty;
     }
 
     // Supprimer une propriété (soft delete)
@@ -115,7 +120,7 @@ public class PropertyService {
         boolean hasConflictingBooking = bookingRepository.findConflictingBookings(
                         propertyId, startDate, endDate).stream()
                 .anyMatch(booking -> booking.getStatus() == BookingStatus.CONFIRMED ||
-                        booking.getStatus() == BookingStatus.PENDING);
+                        booking.getStatus() == BookingStatus.PENDING && (booking.getExpiresAt() == null || booking.getExpiresAt().isAfter(java.time.Instant.now())));
 
         if (hasConflictingBooking) {
             return false;

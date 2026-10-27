@@ -21,7 +21,7 @@ public class PropertyRequestDTO {
     @NotNull @Min(1) private Integer maxGuests;
     @NotNull @Min(0) private Integer bedrooms;
     private List<@NotBlank String> amenityIds;
-    private List<@NotBlank String> imageUrls;
+    @Size(max=10) private List<@NotBlank String> imageUrls;
 
     public Property toEntity() {
         return Property.builder().title(title).description(description).type(type).address(address)
